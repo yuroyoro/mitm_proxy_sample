@@ -9,6 +9,29 @@ import (
 	"crypto/tls"
 )
 
+func (proxy *MiTMProxy) relayHTTPSRequest(w http.ResponseWriter, r *http.Request) {
+	proxy.info("relayHTTPSRequest : %s %s", r.Method, r.URL.String())
+
+	dest, err := net.Dial("tcp", r.Host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	conn := hijackConnect(w)
+	conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
+
+	proxy.info("relayHTTPSRequest : start relaying tcp packets %s %s", r.Method, r.URL.String())
+	go transfer(dest, conn)
+	go transfer(conn, dest)
+}
+
+func transfer(dest io.WriteCloser, source io.ReadCloser) {
+	defer dest.Close()
+	defer source.Close()
+	io.Copy(dest, source)
+}
+
 func (proxy *MiTMProxy) mitmRequest(w http.ResponseWriter, r *http.Request) {
 	conn := hijackConnect(w)
 	conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))

@@ -13,25 +13,31 @@ import (
 
 // MiTMProxy : proxy instance
 type MiTMProxy struct {
+	mitm      bool
 	transport *http.Transport
 	signingCertificate
 }
 
 func main() {
+	mitm := flag.Bool("mitm", false, "enable mitm sniffing on https")
 	addr := flag.String("addr", ":4080", "proxy listen address")
 	certfile := flag.String("cert-pem", "", "ca cert file")
 	keyfile := flag.String("key-pem", "", "ca key file")
 
 	flag.Parse()
-	proxy := newProxy(*certfile, *keyfile)
+	proxy := newProxy(*mitm, *certfile, *keyfile)
 
-	proxy.info("Starting Proxy listend: %s", *addr)
+	proxy.info("Starting Proxy listend: %s : mitm %v", *addr, *mitm)
 	log.Fatal(http.ListenAndServe(*addr, proxy))
 }
 
 func (proxy *MiTMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "CONNECT" {
-		proxy.mitmRequest(w, r)
+	if r.Method == http.MethodConnect {
+		if proxy.mitm {
+			proxy.mitmRequest(w, r)
+		} else {
+			proxy.relayHTTPSRequest(w, r)
+		}
 		return
 	}
 
@@ -70,8 +76,9 @@ func dumpResponse(resp *http.Response) {
 	fmt.Println("---------------------------------------------------------------------")
 }
 
-func newProxy(certfile, keyfile string) *MiTMProxy {
+func newProxy(mitm bool, certfile, keyfile string) *MiTMProxy {
 	proxy := &MiTMProxy{
+		mitm:      mitm,
 		transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, Proxy: http.ProxyFromEnvironment},
 	}
 
